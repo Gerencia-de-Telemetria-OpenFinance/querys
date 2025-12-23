@@ -7,6 +7,7 @@ WITH parameters AS (
 
 uniao_requisicoes AS (
     SELECT ts_to_date_gmt, serverorgid, clientorgid, endpoint, httpmethod, statuscode, COUNT(*) as status_count
+    , 'DADOS_CLIENTES' AS produto
     FROM pcm_reports_clients
     WHERE 1=1
         AND DATE(ts_to_date_gmt) BETWEEN
@@ -20,11 +21,18 @@ uniao_requisicoes AS (
                 AND status = 'UNPAIRED'
             )
         )
-        GROUP BY 1, 2, 3, 4, 5, 6
+        GROUP BY 1, 2, 3, 4, 5, 6, 8
         
     UNION ALL
 
     SELECT ts_to_date_gmt, serverorgid, clientorgid, endpoint, httpmethod, statuscode, COUNT(*) as status_count
+          ,   CASE
+                WHEN additionalinfo_authorisationflow = 'FIDO_FLOW' THEN 'JSR'
+                WHEN additionalinfo_authorisationflow = 'HYBRID_FLOW' AND endpoint LIKE '%pix/payments%' THEN 'PAGAMENTOS_IMEDIATOS'
+                WHEN additionalinfo_authorisationflow = 'HYBRID_FLOW' AND endpoint LIKE '%pix/recurring-payments%' AND additionalinfo_paymenttype = 'AUTOMATIC' THEN 'PIX_AUTOMATICO'
+                WHEN additionalinfo_authorisationflow = 'HYBRID_FLOW' AND endpoint LIKE '%pix/recurring-payments%' AND additionalinfo_paymenttype = 'SWEEPING' THEN 'TRANSF_INTEL'
+                ELSE 'NAO_INFORMADO'
+            END AS produto
     FROM pcm_reports_payments
     WHERE 1=1
         AND DATE(ts_to_date_gmt) BETWEEN
@@ -38,11 +46,12 @@ uniao_requisicoes AS (
                 AND status = 'UNPAIRED'
             )
         )
-    GROUP BY 1, 2, 3, 4, 5, 6
+    GROUP BY 1, 2, 3, 4, 5, 6, 8
     
     UNION ALL
 
     SELECT ts_to_date_gmt, serverorgid, clientorgid, endpoint, httpmethod, statuscode, COUNT(*) as status_count
+    , NULL AS produto
     FROM pcm_reports_security
     WHERE 1=1
         AND DATE(ts_to_date_gmt) BETWEEN
@@ -56,7 +65,7 @@ uniao_requisicoes AS (
                 AND status = 'UNPAIRED'
             )
         )
-    GROUP BY 1, 2, 3, 4, 5, 6
+    GROUP BY 1, 2, 3, 4, 5, 6, 8
     
     UNION ALL
 
@@ -67,14 +76,15 @@ uniao_requisicoes AS (
         endpoint,
         httpmethod,
         statuscode,
-        COUNT(*) as status_count
+        COUNT(*) as status_count,
+        NULL AS produto
     FROM "pcm-product"."pcm_reports_opendata"
     WHERE 1=1
         AND DATE(ts_to_date) BETWEEN
             (SELECT init_date FROM parameters)
                 AND
             (SELECT end_date FROM parameters)
-    GROUP BY 1, 2, 3, 4, 5, 6
+    GROUP BY 1, 2, 3, 4, 5, 6, 8
 )
 
 SELECT

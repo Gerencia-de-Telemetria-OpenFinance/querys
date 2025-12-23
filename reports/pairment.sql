@@ -13,6 +13,7 @@ requests as (
     ,   role
     ,   endpoint
     ,   httpmethod
+    ,   'DADOS_CLIENTES' AS produto
     ,   status
     ,   arrived_at - INTERVAL '3' HOUR AS arrived_at
     ,   ts - INTERVAL '3' HOUR AS ts
@@ -30,6 +31,13 @@ requests as (
     ,   role
     ,   endpoint
     ,   httpmethod
+    ,   CASE
+            WHEN r.additionalinfo_authorisationflow = 'FIDO_FLOW' THEN 'JSR'
+            WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/payments%' THEN 'PAGAMENTOS_IMEDIATOS'
+            WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/recurring-payments%' AND r.additionalinfo_paymenttype = 'AUTOMATIC' THEN 'PIX_AUTOMATICO'
+            WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/recurring-payments%' AND r.additionalinfo_paymenttype = 'SWEEPING' THEN 'TRANSF_INTEL'
+            ELSE 'NAO_INFORMADO'
+        END AS produto
     ,   status
     ,   arrived_at - INTERVAL '3' HOUR AS arrived_at
     ,   ts - INTERVAL '3' HOUR AS ts
@@ -45,6 +53,7 @@ pairment as (
     ,   CASE WHEN role = 'CLIENT' THEN clientorgid ELSE serverorgid END as orgid
     ,   endpoint
     ,   httpmethod
+    ,   produto
     ,   CASE WHEN arrived_at <= (CAST(ts_to_date AS TIMESTAMP) + INTERVAL '1' DAY + INTERVAL '8' HOUR) THEN 1 ELSE 0 END AS eight_hour
     ,   CASE WHEN arrived_at <= (ts + INTERVAL '7' DAY) THEN 1 ELSE 0 END AS seven_days
     ,   SUM(CASE WHEN status = 'PAIRED' THEN 1 ELSE 0 END) as paired_count
@@ -52,7 +61,7 @@ pairment as (
     ,   SUM(CASE WHEN status = 'PAIRED_INCONSISTENT' THEN 1 ELSE 0 END) as inconsisten_count
     ,   SUM(CASE WHEN status = 'SINGLE' THEN 1 ELSE 0 END) as single_count
     FROM requests
-    GROUP BY 1, 2, 3, 4, 5, 6
+    GROUP BY 1, 2, 3, 4, 5, 6, 7
 ),
 
 counterpart as (
@@ -61,11 +70,12 @@ counterpart as (
     ,   CASE WHEN role = 'SERVER' THEN clientorgid ELSE serverorgid END as orgid
     ,   endpoint
     ,   httpmethod
+    ,   produto
     ,   1 AS eight_hour
     ,   1 AS seven_days
     ,   SUM(CASE WHEN status = 'UNPAIRED' THEN 1 ELSE 0 END) as unpaired_counterpart_count
     FROM requests
-    GROUP BY 1, 2, 3, 4
+    GROUP BY 1, 2, 3, 4, 5
 )
 
 SELECT
@@ -73,6 +83,7 @@ SELECT
 ,   COALESCE(p.orgid, c.orgid) AS orgid
 ,   COALESCE(p.endpoint, c.endpoint) AS endpoint
 ,   COALESCE(p.httpmethod, c.httpmethod) AS httpmethod
+,   COALESCE(p.produto, c.produto) AS produto
 ,   COALESCE(p.eight_hour, c.eight_hour) AS eight_hour
 ,   COALESCE(p.seven_days, c.seven_days) AS seven_days
 ,   COALESCE(p.paired_count, 0) AS paired_count
@@ -86,5 +97,6 @@ ON 1=1
     AND p.orgid = c.orgid
     AND p.endpoint = c.endpoint
     AND p.httpmethod = c.httpmethod
+    AND p.produto = c.produto
     AND p.eight_hour = c.eight_hour
     AND p.seven_days = c.seven_days

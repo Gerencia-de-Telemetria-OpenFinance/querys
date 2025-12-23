@@ -39,11 +39,20 @@ sucess AS (
     ,   endpoint
     ,   httpmethod
     ,   ts_to_date
-    ,   minute_ts
+    ,   minute_ts,
+        CASE
+            WHEN r.additionalinfo_authorisationflow = 'FIDO_FLOW' THEN 'JSR'
+            WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/payments%' THEN 'PAGAMENTOS_IMEDIATOS'
+            WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/recurring-payments%' AND r.additionalinfo_paymenttype = 'AUTOMATIC' THEN 'PIX_AUTOMATICO'
+            WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/recurring-payments%' AND r.additionalinfo_paymenttype = 'SWEEPING' THEN 'TRANSF_INTEL'
+            ELSE 'NAO_INFORMADO'
+        END AS produto -- se payments
+        -- 'DADOS_CLIENTES' AS produto -- se clients
+        -- NULL AS produto -- se security
     ,   CAST(SUM(CASE WHEN statuscode LIKE '2%' OR statuscode = '422' THEN request_num ELSE 0 END) AS DOUBLE) as sucess
     ,   SUM(request_num) as total_requests
     FROM calls
-    GROUP BY 1, 2, 3, 4, 5
+    GROUP BY 1, 2, 3, 4, 5, 6
 ),
 
 disponible AS (
@@ -52,11 +61,12 @@ disponible AS (
     ,   endpoint
     ,   httpmethod
     ,   ts_to_date
+    ,   produto
     ,   SUM(CASE WHEN sucess / total_requests >= 0.95 THEN 1 ELSE 0 END) as minutes_disponible
     ,   COUNT(1) as total_minutes
     ,   SUM(total_requests) as volume
     FROM sucess
-    GROUP BY 1, 2, 3, 4
+    GROUP BY 1, 2, 3, 4, 5
 )
 
 SELECT
@@ -64,6 +74,7 @@ SELECT
 ,   endpoint
 ,   httpmethod
 ,   ts_to_date
+,   produto
 ,   minutes_disponible
 ,   total_minutes
 ,   volume
