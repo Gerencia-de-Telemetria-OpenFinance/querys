@@ -10,3 +10,5 @@ Repositório voltado para documentar as querys de extração de dados utilizados
 | [Sobrecarga do servidor](/sobrecarga/529.sql) | Calcula a taxa de requisições 529 sobre as requisições válidas por instituição |
 | [Volumes](/volumes/vol.sql) | Extrai os volumes das instituições como ```CLIENT``` e como ```SERVER``` por API |
 | [Chamadas Válidas](/chamadas_validas/valid.sql) | Calcula o volume de requisições válidas de acordo com a regra de disponibilidade |
+
+- [Querys por produto](https://github.com/Gerencia-de-Telemetria-OpenFinance/querys/tree/by_product)
