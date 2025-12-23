@@ -12,7 +12,16 @@ calls AS (
     ,   httpmethod
     ,   ts_to_date_gmt as ts_to_date
     ,   date_format(ts, '%Y-%m-%d %H:%i:00') as minute_ts
-    ,   statuscode
+    ,   statuscode,
+    -- CASE
+    --     WHEN additionalinfo_authorisationflow = 'FIDO_FLOW' THEN 'JSR'
+    --     WHEN additionalinfo_authorisationflow = 'HYBRID_FLOW' AND endpoint LIKE '%pix/payments%' THEN 'PAGAMENTOS_IMEDIATOS'
+    --     WHEN additionalinfo_authorisationflow = 'HYBRID_FLOW' AND endpoint LIKE '%pix/recurring-payments%' AND additionalinfo_paymenttype = 'AUTOMATIC' THEN 'PIX_AUTOMATICO'
+    --     WHEN additionalinfo_authorisationflow = 'HYBRID_FLOW' AND endpoint LIKE '%pix/recurring-payments%' AND additionalinfo_paymenttype = 'SWEEPING' THEN 'TRANSF_INTEL'
+    --     ELSE 'NAO_INFORMADO'
+    -- END AS produto -- se payments
+    'DADOS_CLIENTES' AS produto -- se clients
+    -- NULL AS produto -- se security
     ,   COUNT(1) as request_num
     FROM pcm_reports_clients
     WHERE 1=1
@@ -30,7 +39,7 @@ calls AS (
             OR statuscode LIKE '5%'
             OR statuscode IN ('422', '408')
         )
-    GROUP BY 1, 2, 3, 4, 5, 6
+    GROUP BY 1, 2, 3, 4, 5, 6, 7
 ),
 
 sucess AS (
@@ -39,16 +48,8 @@ sucess AS (
     ,   endpoint
     ,   httpmethod
     ,   ts_to_date
-    ,   minute_ts,
-        CASE
-            WHEN r.additionalinfo_authorisationflow = 'FIDO_FLOW' THEN 'JSR'
-            WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/payments%' THEN 'PAGAMENTOS_IMEDIATOS'
-            WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/recurring-payments%' AND r.additionalinfo_paymenttype = 'AUTOMATIC' THEN 'PIX_AUTOMATICO'
-            WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/recurring-payments%' AND r.additionalinfo_paymenttype = 'SWEEPING' THEN 'TRANSF_INTEL'
-            ELSE 'NAO_INFORMADO'
-        END AS produto -- se payments
-        -- 'DADOS_CLIENTES' AS produto -- se clients
-        -- NULL AS produto -- se security
+    ,   minute_ts
+    ,   produto
     ,   CAST(SUM(CASE WHEN statuscode LIKE '2%' OR statuscode = '422' THEN request_num ELSE 0 END) AS DOUBLE) as sucess
     ,   SUM(request_num) as total_requests
     FROM calls
