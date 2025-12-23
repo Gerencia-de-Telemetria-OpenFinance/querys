@@ -1,8 +1,8 @@
 -- REPORT
 WITH parameters as (
     SELECT
-        DATE '2025-10-01' as init_date
-    ,   DATE '2025-10-31' as end_date
+        DATE '2025-11-16' as init_date
+    ,   DATE '2025-11-30' as end_date
 ),
 
 requests as (
@@ -43,6 +43,7 @@ pairment as (
     SELECT
         ts_to_date
     ,   CASE WHEN role = 'CLIENT' THEN clientorgid ELSE serverorgid END as orgid
+    ,   CASE WHEN role = 'CLIENT' THEN serverorgid ELSE clientorgid END as counterpart_id
     ,   endpoint
     ,   httpmethod
     ,   CASE WHEN arrived_at <= (CAST(ts_to_date AS TIMESTAMP) + INTERVAL '1' DAY + INTERVAL '8' HOUR) THEN 1 ELSE 0 END AS eight_hour
@@ -50,41 +51,72 @@ pairment as (
     ,   SUM(CASE WHEN status = 'PAIRED' THEN 1 ELSE 0 END) as paired_count
     ,   SUM(CASE WHEN status = 'UNPAIRED' THEN 1 ELSE 0 END) as unpaired_self_count
     ,   SUM(CASE WHEN status = 'PAIRED_INCONSISTENT' THEN 1 ELSE 0 END) as inconsisten_count
-    ,   SUM(CASE WHEN status = 'SINGLE' THEN 1 ELSE 0 END) as single_count
     FROM requests
-    GROUP BY 1, 2, 3, 4, 5, 6
+    GROUP BY 1, 2, 3, 4, 5, 6, 7
 ),
 
 counterpart as (
     SELECT
         ts_to_date
     ,   CASE WHEN role = 'SERVER' THEN clientorgid ELSE serverorgid END as orgid
+    ,   CASE WHEN role = 'SERVER' THEN serverorgid ELSE clientorgid END as counterpart_id
     ,   endpoint
     ,   httpmethod
     ,   1 AS eight_hour
     ,   1 AS seven_days
     ,   SUM(CASE WHEN status = 'UNPAIRED' THEN 1 ELSE 0 END) as unpaired_counterpart_count
     FROM requests
-    GROUP BY 1, 2, 3, 4
+    GROUP BY 1, 2, 3, 4, 5
+),
+
+counts as (
+    SELECT
+        COALESCE(p.ts_to_date, c.ts_to_date) AS ts_to_date
+    ,   COALESCE(p.orgid, c.orgid) AS orgid
+    ,   COALESCE(p.counterpart_id, c.counterpart_id) AS counterpart_id
+    ,   COALESCE(p.endpoint, c.endpoint) AS endpoint
+    ,   COALESCE(p.httpmethod, c.httpmethod) AS httpmethod
+    ,   COALESCE(p.eight_hour, c.eight_hour) AS eight_hour
+    ,   COALESCE(p.seven_days, c.seven_days) AS seven_days
+    ,   COALESCE(p.paired_count, 0) AS paired_count
+    ,   COALESCE(p.unpaired_self_count, 0) AS unpaired_self_count
+    ,   COALESCE(c.unpaired_counterpart_count, 0) AS unpaired_counterpart_count
+    ,   COALESCE(p.inconsisten_count, 0) AS inconsisten_count
+    FROM pairment p FULL OUTER JOIN counterpart c
+    ON 1=1
+        AND p.ts_to_date = c.ts_to_date
+        AND p.orgid = c.orgid
+        AND p.counterpart_id = c.counterpart_id
+        AND p.endpoint = c.endpoint
+        AND p.httpmethod = c.httpmethod
+        AND p.eight_hour = c.eight_hour
+        AND p.seven_days = c.seven_days
+),
+
+sumarized_groups as (
+    SELECT
+        ts_to_date
+    ,   orgid
+    ,   counterpart_id
+    ,   endpoint
+    ,   httpmethod
+    ,   SUM(CASE WHEN eight_hour = 1 THEN paired_count ELSE 0 END) as paired_8h
+    ,   SUM(CASE WHEN eight_hour = 1 THEN unpaired_self_count ELSE 0 END) as unpaired_self_8h
+    ,   SUM(CASE WHEN eight_hour = 1 THEN inconsisten_count ELSE 0 END) as inconsistent_8h
+    ,   SUM(CASE WHEN seven_days = 1 THEN paired_count ELSE 0 END) as paired_7d
+    ,   SUM(CASE WHEN seven_days = 1 THEN unpaired_self_count ELSE 0 END) as unpaired_self_7d
+    ,   SUM(CASE WHEN seven_days = 0 THEN unpaired_self_count + paired_count ELSE 0 END) as late_report
+    ,   SUM(inconsisten_count) as inconsistent_all
+    ,   SUM(unpaired_counterpart_count) as missing
+    FROM counts
+    GROUP BY 1, 2, 3, 4, 5
 )
 
 SELECT
-    COALESCE(p.ts_to_date, c.ts_to_date) AS ts_to_date
-,   COALESCE(p.orgid, c.orgid) AS orgid
-,   COALESCE(p.endpoint, c.endpoint) AS endpoint
-,   COALESCE(p.httpmethod, c.httpmethod) AS httpmethod
-,   COALESCE(p.eight_hour, c.eight_hour) AS eight_hour
-,   COALESCE(p.seven_days, c.seven_days) AS seven_days
-,   COALESCE(p.paired_count, 0) AS paired_count
-,   COALESCE(p.unpaired_self_count, 0) AS unpaired_self_count
-,   COALESCE(c.unpaired_counterpart_count, 0) AS unpaired_counterpart_count
-,   COALESCE(p.inconsisten_count, 0) AS inconsisten_count
-,   COALESCE(p.single_count, 0) AS single_count
-FROM pairment p FULL OUTER JOIN counterpart c
-ON 1=1
-    AND p.ts_to_date = c.ts_to_date
-    AND p.orgid = c.orgid
-    AND p.endpoint = c.endpoint
-    AND p.httpmethod = c.httpmethod
-    AND p.eight_hour = c.eight_hour
-    AND p.seven_days = c.seven_days
+    *
+,   CASE WHEN paired_8h + unpaired_self_8h + inconsistent_8h + missing > 0 THEN
+        CAST(paired_8h + unpaired_self_8h + inconsistent_8h AS DOUBLE) / (paired_8h + unpaired_self_8h + inconsistent_8h + missing) ELSE NULL END as report_8h
+,   CASE WHEN paired_7d + unpaired_self_7d + inconsistent_all + missing > 0 THEN
+        CAST(paired_7d + unpaired_self_7d AS DOUBLE) / (paired_7d + unpaired_self_7d + inconsistent_all + missing) ELSE NULL END as report_7d
+FROM sumarized_groups
+WHERE paired_8h + unpaired_self_8h + inconsistent_8h + paired_7d + unpaired_self_7d + inconsistent_all + missing > 0
