@@ -10,7 +10,16 @@ dados as (
         DATE(ts_to_date_gmt) as ts_to_date_gmt
     ,   serverorgid
     ,   endpoint
-    ,   httpmethod
+    ,   httpmethod,
+    CASE
+        WHEN r.additionalinfo_authorisationflow = 'FIDO_FLOW' THEN 'JSR'
+        WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/payments%' THEN 'PAGAMENTOS_IMEDIATOS'
+        WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/recurring-payments%' AND r.additionalinfo_paymenttype = 'AUTOMATIC' THEN 'PIX_AUTOMATICO'
+        WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/recurring-payments%' AND r.additionalinfo_paymenttype = 'SWEEPING' THEN 'TRANSF_INTEL'
+        ELSE 'NAO_INFORMADO'
+    END AS produto -- se payments
+    -- 'DADOS_CLIENTES' AS produto -- se clients
+    -- NULL AS produto -- se security
     ,   processtimespan
     FROM 
         pcm_reports_clients
@@ -35,16 +44,8 @@ SELECT
     ts_to_date_gmt as ts_to_date
 ,   serverorgid
 ,   endpoint
-,   httpmethod,
-    CASE
-        WHEN r.additionalinfo_authorisationflow = 'FIDO_FLOW' THEN 'JSR'
-        WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/payments%' THEN 'PAGAMENTOS_IMEDIATOS'
-        WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/recurring-payments%' AND r.additionalinfo_paymenttype = 'AUTOMATIC' THEN 'PIX_AUTOMATICO'
-        WHEN r.additionalinfo_authorisationflow = 'HYBRID_FLOW' AND r.endpoint LIKE '%pix/recurring-payments%' AND r.additionalinfo_paymenttype = 'SWEEPING' THEN 'TRANSF_INTEL'
-        ELSE 'NAO_INFORMADO'
-    END AS produto -- se payments
-    -- 'DADOS_CLIENTES' AS produto -- se clients
-    -- NULL AS produto -- se security
+,   httpmethod
+,   produto    
 ,   COUNT(1) as requests_count
 ,   CAST(ROUND(value_at_quantile(qdigest_agg(processtimespan, 1, 0.00001), 0.95)) as integer) as p95_ms
 FROM dados
