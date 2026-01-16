@@ -8,19 +8,56 @@ with parameters as (
 dados as (
     SELECT
         DATE(ts_to_date_gmt) as ts_to_date_gmt
-    ,   organisationid as serverorgid
-    -- ,   organisationid as serverorgid
+    ,   serverorgid
     ,   endpoint
     ,   httpmethod
     ,   processtimespan
     FROM 
-        -- pcm_reports_clients
-        "pcm-product"."pcm_reports_opendata"
+        pcm_reports_clients
     WHERE
         status <> 'PAIRED_INCONSISTENT'
         AND processtimespan > 0
         AND statuscode NOT IN ('423', '429', '529')
-        -- AND (clientorgid = orgid OR (serverorgid = orgid and status = 'UNPAIRED'))
+        AND (clientorgid = orgid OR (serverorgid = orgid and status = 'UNPAIRED'))
+        AND DATE(ts_to_date_gmt) BETWEEN
+            (SELECT init_date FROM parameters)
+                AND
+            (SELECT end_date FROM parameters)
+
+    UNION ALL
+
+    SELECT
+        DATE(ts_to_date_gmt) as ts_to_date_gmt
+    ,   serverorgid
+    ,   endpoint
+    ,   httpmethod
+    ,   processtimespan
+    FROM 
+        pcm_reports_payments
+    WHERE
+        status <> 'PAIRED_INCONSISTENT'
+        AND processtimespan > 0
+        AND statuscode NOT IN ('423', '429', '529')
+        AND (clientorgid = orgid OR (serverorgid = orgid and status = 'UNPAIRED'))
+        AND DATE(ts_to_date_gmt) BETWEEN
+            (SELECT init_date FROM parameters)
+                AND
+            (SELECT end_date FROM parameters)
+
+    UNION ALL
+
+    SELECT
+        DATE(ts_to_date_gmt) as ts_to_date_gmt
+    ,   serverorgid
+    ,   endpoint
+    ,   httpmethod
+    ,   processtimespan
+    FROM 
+        pcm_reports_security
+    WHERE
+        AND processtimespan > 0
+        AND statuscode NOT IN ('423', '429', '529')
+        AND (clientorgid = orgid)
         AND DATE(ts_to_date_gmt) BETWEEN
             (SELECT init_date FROM parameters)
                 AND
@@ -33,6 +70,6 @@ SELECT
 ,   endpoint
 ,   httpmethod
 ,   COUNT(1) as requests_count
-,   CAST(ROUND(approx_percentile(processtimespan, 0.95)) as integer) as p95_ms
+,   CAST(ROUND(percentile(processtimespan, 0.95)) as integer) as p95_ms
 FROM dados
 GROUP BY 1, 2, 3, 4
